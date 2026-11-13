@@ -14,6 +14,8 @@ Versión multijugador del juego Battleship Atlas Naval. Conserva el menú y los 
 - Previsualización de maniobras, detección visual de colisiones y demarcaciones de alcance por arma.
 - Animaciones diferenciadas de artillería, torpedos, cohetes, ataque aéreo, impactos y estelas de movimiento.
 - Cartas tácticas: sonar, ataque coordinado, maniobra evasiva, reparación y señuelo.
+- Economía táctica del modo clásico: se obtiene 1 punto por cada 5 PV de daño efectivo y cada carta exige su coste correspondiente.
+- El señuelo naval se coloca en aguas propias como un contacto falso, permanece oculto hasta recibir fuego y resiste dos ataques.
 - Emparejamiento en línea, cola LAN y salas privadas.
 - Reconexión breve, abandono explícito y cierre no destructivo de la ventana.
 - Validación de acciones y ocultación de la flota rival en el servidor.
