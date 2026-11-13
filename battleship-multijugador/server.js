@@ -1,104 +1,60 @@
 'use strict';
-const http = require('node:http');
-const fs = require('node:fs');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const LENGTHS = [5,4,3,2,2];
-function createServer({sessionTimeout=120000,sweepInterval=5000}={}) {
- const users = new Map(), rooms = new Map(), queue = [];
- const fail = (s) => { throw new Error(s); };
- function roomFor(u) { return rooms.get(u.room); }
- function createRoom(u, scope) {
-  let code; do { code=crypto.randomBytes(4).toString('hex').toUpperCase(); } while(rooms.has(code));
-  const r={code,scope,players:[u.id],fleets:{},shots:{},turn:u.id,winner:null,reason:''}; rooms.set(code,r); u.room=code; return r;
- }
- function leave(u) {
-  for(let i=queue.length-1;i>=0;i--) if(queue[i]===u.id) queue.splice(i,1);
-  const r=roomFor(u); if(r) { if(r.players.length===1) rooms.delete(r.code); else if(!r.winner) {r.winner=r.players.find(id=>id!==u.id);r.reason='El rival abandonó la partida.';} }
-  u.room=null;
- }
- function view(u) {
-  const r=roomFor(u); if(!r) return {queued:queue.includes(u.id)};
-  const enemy=r.players.find(id=>id!==u.id), ef=r.fleets[enemy], shots=r.shots[u.id]||[];
-  return {code:r.code,scope:r.scope,name:u.name,opponent:users.get(enemy)?.name,opponentOnline:!!users.get(enemy)&&Date.now()-users.get(enemy).seen<20000,ready:!!r.fleets[u.id],enemyReady:!!ef,own:r.fleets[u.id]||null,incoming:r.shots[enemy]||[],shots,sunk:ef?ef.filter(ship=>ship.every(c=>shots.some(s=>s.cell===c))).flat():[],phase:r.winner?'ended':Object.keys(r.fleets).length===2?'battle':'deploy',myTurn:r.turn===u.id,winner:r.winner? r.winner===u.id?'you':'opponent':null,reason:r.reason};
- }
- function action(u,b) {
-  const r=roomFor(u);
-  if(b.action==='leave'){leave(u);return;}
-  if(['create','queue','join'].includes(b.action)) {
-   if(r&&!r.winner) fail('Abandona tu sala actual antes de entrar en otra.');
-   const scope=b.scope==='lan'?'lan':'online';
-   if(b.action==='join') {
-    const target=rooms.get(String(b.code||'').trim().toUpperCase());
-    if(!target||target.scope!==scope||target.players.length!==1||target.winner) fail('Sala no disponible en esta modalidad.');
-    leave(u);target.players.push(u.id);u.room=target.code; return;
-   }
-   leave(u);
-   if(b.action==='create'){createRoom(u,scope);return;}
-   u.scope=scope;
-   const index=queue.findIndex(id=>users.has(id)&&users.get(id).scope===scope&&Date.now()-users.get(id).seen<20000);
-   if(index>=0){const other=users.get(queue.splice(index,1)[0]);const nr=createRoom(other,scope);nr.players.push(u.id);u.room=nr.code;}else queue.push(u.id);
-   return;
+const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const SHIPS=[
+ {type:'carrier',name:'Portaviones',maxHp:100,length:190,width:52,move:110,weapons:['cannon','rocket']},
+ {type:'battleship',name:'Acorazado',maxHp:90,length:165,width:48,move:125,weapons:['cannon','torpedo']},
+ {type:'submarine',name:'Submarino',maxHp:65,length:125,width:34,move:145,weapons:['torpedo']},
+ {type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','rocket']},
+ {type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','torpedo']}
+];
+const WEAPONS={cannon:{name:'Cañón naval',damage:22,radius:34},torpedo:{name:'Torpedo',damage:30,radius:24},rocket:{name:'Cohetes',damage:18,radius:62},air:{name:'Ataque aéreo',damage:16,radius:78,tower:true}};
+const CARDS={sonar:{name:'Pulso de sonar',cost:1},volley:{name:'Ataque coordinado',cost:1},evade:{name:'Maniobra evasiva',cost:1},repair:{name:'Reparación de emergencia',cost:1},decoy:{name:'Señuelo naval',cost:1}};
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const copy=o=>JSON.parse(JSON.stringify(o));
+function createServer({sessionTimeout=120000,sweepInterval=5000}={}){
+ const users=new Map(),rooms=new Map(),queue=[];
+ const fail=s=>{throw new Error(s)};
+ function userRoom(u){return rooms.get(u.room)}
+ function newRoom(u,scope){let code;do{code=crypto.randomBytes(4).toString('hex').toUpperCase()}while(rooms.has(code));const r={code,scope,players:[u.id],fleets:{},turn:u.id,ap:3,round:1,winner:null,reason:'',events:[],hands:{},buffs:{},sonar:{},created:Date.now()};rooms.set(code,r);u.room=code;return r}
+ function leave(u){for(let i=queue.length-1;i>=0;i--)if(queue[i]===u.id)queue.splice(i,1);const r=userRoom(u);if(r){if(r.players.length===1)rooms.delete(r.code);else if(!r.winner){r.winner=r.players.find(x=>x!==u.id);r.reason='El rival abandonó la batalla.'}}u.room=null}
+ function validatePose(p,i,all){const d=SHIPS[i];if(!p||!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.angle))fail('Despliegue inválido.');if(p.x<d.length/2+15||p.x>1000-d.length/2-15||p.y<d.length/2+15||p.y>560-d.length/2-15)fail('Una nave queda fuera de tus aguas.');for(let j=0;j<i;j++){const q=all[j],e=SHIPS[j];if(Math.hypot(p.x-q.x,p.y-q.y)<(d.length+e.length)*.42+22)fail('Las naves no pueden superponerse.')}}
+ function validateMovePose(p,index,all){const d=SHIPS[index];if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.angle))fail('Destino inválido.');if(p.x<d.length/2+15||p.x>1000-d.length/2-15||p.y<d.length/2+15||p.y>560-d.length/2-15)fail('La nave quedaría fuera de tus aguas.');for(let j=0;j<all.length;j++)if(j!==index&&!all[j].sunk){const q=all[j],e=SHIPS[j];if(Math.hypot(p.x-q.x,p.y-q.y)<(d.length+e.length)*.42+22)fail('La maniobra chocaría con otra nave.')}}
+ function makeFleet(poses){if(!Array.isArray(poses)||poses.length!==SHIPS.length)fail('Debes desplegar cinco naves.');poses.forEach((p,i)=>validatePose(p,i,poses));return poses.map((p,i)=>({...copy(SHIPS[i]),id:'S'+(i+1),x:p.x,y:p.y,angle:p.angle,hp:SHIPS[i].maxHp,sunk:false}))}
+ function targetAt(fleet,x,y,radius){let best=null,dist=Infinity;for(const s of fleet)if(!s.sunk){const dx=x-s.x,dy=y-s.y,c=Math.cos(-s.angle),sn=Math.sin(-s.angle),lx=dx*c-dy*sn,ly=dx*sn+dy*c;const d=Math.hypot(Math.max(0,Math.abs(lx)-s.length/2),Math.max(0,Math.abs(ly)-s.width/2));if(d<=radius&&d<dist){best=s;dist=d}}return best}
+ function append(r,e){r.events.push({...e,id:crypto.randomUUID(),time:Date.now()});if(r.events.length>120)r.events.splice(0,r.events.length-120)}
+ function drawHand(){return ['sonar','volley','evade','repair','decoy'].sort(()=>Math.random()-.5).slice(0,3)}
+ function startIfReady(r){if(r.players.length===2&&r.players.every(id=>r.fleets[id])){for(const id of r.players){r.hands[id]??=drawHand();r.buffs[id]??={volley:0,evade:0,decoy:0};}append(r,{kind:'start',text:'Ambas flotas están desplegadas. Comienza la batalla.'})}}
+ function nextTurn(r,u){if(r.turn!==u.id)fail('No es tu turno.');const enemy=r.players.find(x=>x!==u.id);r.turn=enemy;r.ap=3;if(enemy===r.players[0])r.round++;append(r,{kind:'turn',actor:u.id,text:'Turno finalizado.'})}
+ function action(u,b){
+  let r=userRoom(u);
+  if(b.action==='leave'){leave(u);return}
+  if(['create','queue','join'].includes(b.action)){
+   if(r&&!r.winner)fail('Ya perteneces a una sala.');leave(u);const scope=b.scope==='lan'?'lan':'online';
+   if(b.action==='create'){newRoom(u,scope);return}
+   if(b.action==='join'){r=rooms.get(String(b.code||'').trim().toUpperCase());if(!r||r.scope!==scope||r.players.length!==1||r.winner)fail('Sala no disponible.');r.players.push(u.id);u.room=r.code;return}
+   u.scope=scope;const i=queue.findIndex(id=>users.has(id)&&users.get(id).scope===scope&&Date.now()-users.get(id).seen<20000);if(i<0)queue.push(u.id);else{const other=users.get(queue.splice(i,1)[0]),nr=newRoom(other,scope);nr.players.push(u.id);u.room=nr.code}return;
   }
-  if(!r||r.winner) fail('No hay una partida activa.');
-  if(b.action==='deploy') {
-   if(r.fleets[u.id]) fail('Tu despliegue ya está confirmado.');
-   const fleet=b.fleet;
-   if(!Array.isArray(fleet)||fleet.length!==5) fail('Debes colocar cinco barcos.');
-   const used=new Set();
-   fleet.forEach((ship,i)=>{
-    if(!Array.isArray(ship)||ship.length!==LENGTHS[i]) fail('Longitud de barco incorrecta.');
-    const cells=[...ship].sort((a,b)=>a-b);
-    if(cells.some(c=>!Number.isInteger(c)||c<0||c>=100||used.has(c))) fail('Posición inválida o barcos superpuestos.');
-    if(new Set(cells).size!==cells.length) fail('Casilla duplicada.');
-    const horizontal=cells.every(c=>Math.floor(c/10)===Math.floor(cells[0]/10))&&cells.every((c,j)=>c===cells[0]+j);
-    const vertical=cells.every((c,j)=>c===cells[0]+j*10);
-    if(!horizontal&&!vertical) fail('Los barcos deben ser rectos y contiguos.');
-    cells.forEach(c=>used.add(c));
-   });
-   r.fleets[u.id]=fleet.map(s=>s.slice());r.shots[u.id]=[];return;
-  }
-  if(b.action==='fire') {
-   if(Object.keys(r.fleets).length!==2||r.turn!==u.id) fail('Espera tu turno y el despliegue rival.');
-   const c=b.cell, shots=r.shots[u.id], enemy=r.players.find(id=>id!==u.id);
-   if(!Number.isInteger(c)||c<0||c>=100||shots.some(s=>s.cell===c)) fail('Disparo inválido o repetido.');
-   shots.push({cell:c,hit:r.fleets[enemy].some(s=>s.includes(c))});
-   if(r.fleets[enemy].flat().every(c=>shots.some(s=>s.cell===c))){r.winner=u.id;r.reason='Todos los barcos rivales han sido hundidos.';}
-   else r.turn=enemy;
-   return;
-  }
-  fail('Acción desconocida.');
+  r=userRoom(u);if(!r||r.winner)fail('No hay una batalla activa.');
+  if(b.action==='deploy'){if(r.fleets[u.id])fail('La flota ya fue confirmada.');r.fleets[u.id]=makeFleet(b.poses);startIfReady(r);return}
+  if(r.players.length!==2||!r.players.every(id=>r.fleets[id]))fail('Espera el despliegue del rival.');if(r.turn!==u.id)fail('Espera tu turno.');
+  const own=r.fleets[u.id],enemyId=r.players.find(x=>x!==u.id),enemy=r.fleets[enemyId];
+  if(b.action==='endTurn'){nextTurn(r,u);return}
+  if(r.ap<=0)fail('No quedan puntos de acción.');
+  if(b.action==='move'){
+   const s=own.find(x=>x.id===b.ship&&!x.sunk);if(!s)fail('Nave no disponible.');const x=Number(b.x),y=Number(b.y);if(!Number.isFinite(x)||!Number.isFinite(y)||Math.hypot(x-s.x,y-s.y)>s.move+1)fail('Destino fuera del alcance.');const pose={x,y,angle:Number.isFinite(b.angle)?b.angle:s.angle},index=own.indexOf(s);validateMovePose(pose,index,own);s.x=x;s.y=y;s.angle=pose.angle;r.ap--;append(r,{kind:'move',actor:u.id,ship:s.id,x,y,text:s.name+' maniobró.'});
+  }else if(b.action==='fire'){
+   const w=WEAPONS[b.weapon];if(!w)fail('Arma desconocida.');let shooter=null;if(!w.tower){shooter=own.find(x=>x.id===b.ship&&!x.sunk);if(!shooter||!shooter.weapons.includes(b.weapon))fail('La nave no puede usar esa arma.')}const x=Number(b.x),y=Number(b.y);if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1000||y<0||y>560)fail('Objetivo fuera del mapa.');const buff=r.buffs[u.id],def=r.buffs[enemyId];let hit=targetAt(enemy,x,y,w.radius),damage=w.damage;if(buff.volley){damage+=10;buff.volley=0}if(def.decoy){hit=null;def.decoy=0}if(hit){if(def.evade){damage=Math.ceil(damage*.65);def.evade--}hit.hp=clamp(hit.hp-damage,0,hit.maxHp);hit.sunk=hit.hp===0}r.ap--;append(r,{kind:'fire',actor:u.id,x,y,weapon:b.weapon,hit:!!hit,damage:hit?damage:0,sunk:hit?.sunk||false,target:hit?.id||null,text:(w.name+': '+(hit?'impacto de '+damage+' PV'+(hit.sunk?' · nave hundida':''):'agua'))});if(enemy.every(s=>s.sunk)){r.winner=u.id;r.reason='La flota rival fue neutralizada.'}
+  }else if(b.action==='card'){
+   const id=b.card;if(!CARDS[id]||!r.hands[u.id].includes(id))fail('Carta no disponible.');const buff=r.buffs[u.id];if(id==='sonar'){const x=Number(b.x),y=Number(b.y);if(!Number.isFinite(x)||!Number.isFinite(y))fail('Selecciona un sector.');r.sonar[u.id]=enemy.filter(s=>!s.sunk&&Math.hypot(s.x-x,s.y-y)<=210).map(s=>({x:Math.round(s.x/80)*80,y:Math.round(s.y/80)*80}));}
+   else if(id==='volley')buff.volley=1;else if(id==='evade')buff.evade=2;else if(id==='decoy')buff.decoy=1;else if(id==='repair'){const s=own.find(x=>x.id===b.ship&&!x.sunk);if(!s||s.hp>=s.maxHp)fail('Selecciona una nave dañada.');s.hp=clamp(s.hp+Math.ceil(s.maxHp*.2),0,s.maxHp)}r.hands[u.id].splice(r.hands[u.id].indexOf(id),1);r.ap--;append(r,{kind:'card',actor:u.id,card:id,text:'Carta: '+CARDS[id].name});
+  }else fail('Acción desconocida.');
+  if(!r.winner&&r.ap<=0)nextTurn(r,u);
  }
- const timer=setInterval(()=>{const now=Date.now();for(const u of users.values())if(now-u.seen>sessionTimeout){leave(u);users.delete(u.id);}for(const [code,r] of rooms)if(r.players.every(id=>!users.has(id)||users.get(id).room!==code))rooms.delete(code);},sweepInterval);timer.unref();
- const server=http.createServer(async(req,res)=>{
-  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
-  const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
-  const url=new URL(req.url,'http://localhost');
-  if(url.pathname.startsWith('/api/')) {
-   try {
-    if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host) return send(403,{error:'Origen no permitido.'});
-    if(req.method!=='POST')return send(405,{error:'Usa POST.'});
-    let raw='';for await(const chunk of req){raw+=chunk;if(Buffer.byteLength(raw)>12000) return send(413,{error:'Petición demasiado grande.'});}
-    const b=JSON.parse(raw||'{}');
-    if(url.pathname==='/api/session') {
-     if(users.size>=2000) return send(503,{error:'Servidor lleno.'});
-     const token=crypto.randomBytes(32).toString('hex'), id=crypto.randomUUID();
-     const u={id,token,name:String(b.name||'Capitán').trim().slice(0,24)||'Capitán',seen:Date.now(),room:null,last:0};users.set(id,u);return send(200,{token,id});
-    }
-    const u=users.get(b.id);if(!u||u.token!==req.headers.authorization?.replace(/^Bearer /,''))return send(401,{error:'Sesión caducada. Vuelve a conectar.'});
-    u.seen=Date.now();
-    if(url.pathname==='/api/action'){if(Date.now()-u.last<100)return send(429,{error:'Espera un instante.'});u.last=Date.now();action(u,b);}
-    else if(url.pathname!=='/api/state')return send(404,{error:'Ruta inexistente.'});
-    return send(200,view(u));
-   }catch(e){return send(400,{error:e instanceof SyntaxError?'Datos inválidos.':e.message});}
-  }
-  const files={'/':'index.html','/multiplayer.js':'multiplayer.js','/multiplayer.css':'multiplayer.css'};
-  if(!files[url.pathname]) {res.writeHead(404);return res.end('No encontrado');}
-  const file=path.join(__dirname,'public',files[url.pathname]);
-  res.setHeader('Content-Type',url.pathname.endsWith('.js')?'text/javascript; charset=utf-8':url.pathname.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');
-  fs.createReadStream(file).on('error',()=>{res.statusCode=500;res.end('Archivo no disponible');}).pipe(res);
- });
- server.on('close',()=>clearInterval(timer));return server;
+ function view(u){const r=userRoom(u);if(!r)return{queued:queue.includes(u.id)};const enemyId=r.players.find(x=>x!==u.id),ef=r.fleets[enemyId],own=r.fleets[u.id];const visibleEnemy=ef?ef.map(s=>s.sunk?copy(s):{id:s.id,name:'Contacto enemigo',sunk:false}):null;return{code:r.code,scope:r.scope,name:u.name,opponent:users.get(enemyId)?.name||null,opponentOnline:!!users.get(enemyId)&&Date.now()-users.get(enemyId).seen<20000,phase:r.winner?'ended':r.players.length===2&&r.players.every(id=>r.fleets[id])?'battle':'deploy',ready:!!own,enemyReady:!!ef,own:own?copy(own):null,enemy:visibleEnemy,turn:r.turn===u.id?'you':'opponent',ap:r.ap,round:r.round,hand:copy(r.hands[u.id]||[]),buffs:copy(r.buffs[u.id]||{}),sonar:copy(r.sonar[u.id]||[]),events:r.events.map(e=>e.actor===u.id?{...e,actor:'you'}:{...e,actor:'opponent'}),winner:r.winner?r.winner===u.id?'you':'opponent':null,reason:r.reason}}
+ const timer=setInterval(()=>{const now=Date.now();for(const u of [...users.values()])if(now-u.seen>sessionTimeout){leave(u);users.delete(u.id)}for(const [code,r]of rooms)if(r.players.every(id=>!users.has(id)||users.get(id).room!==code))rooms.delete(code)},sweepInterval);timer.unref();
+ const server=http.createServer(async(req,res)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');const send=(n,o)=>{res.writeHead(n,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(o))};const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){try{if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(403,{error:'Origen no permitido.'});if(req.method!=='POST')return send(405,{error:'Usa POST.'});let raw='';for await(const c of req){raw+=c;if(Buffer.byteLength(raw)>50000)return send(413,{error:'Petición demasiado grande.'})}const b=JSON.parse(raw||'{}');if(url.pathname==='/api/session'){const token=crypto.randomBytes(32).toString('hex'),id=crypto.randomUUID();users.set(id,{id,token,name:String(b.name||'Capitán').trim().slice(0,24)||'Capitán',seen:Date.now(),room:null,last:0});return send(200,{id,token})}const u=users.get(b.id);if(!u||u.token!==req.headers.authorization?.replace(/^Bearer /,''))return send(401,{error:'Sesión caducada. Vuelve a conectar.'});u.seen=Date.now();if(url.pathname==='/api/action'){if(Date.now()-u.last<80)return send(429,{error:'Espera un instante.'});u.last=Date.now();action(u,b)}else if(url.pathname!=='/api/state')return send(404,{error:'Ruta inexistente.'});return send(200,view(u))}catch(e){return send(400,{error:e instanceof SyntaxError?'Datos inválidos.':e.message})}}
+ const file=url.pathname==='/'?'index.html':url.pathname==='/multiplayer.js'?'multiplayer.js':url.pathname==='/multiplayer.css'?'multiplayer.css':null;if(!file){res.writeHead(404);return res.end('No encontrado')}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8');fs.createReadStream(path.join(__dirname,'public',file)).on('error',()=>{res.statusCode=500;res.end('No disponible')}).pipe(res)});
+ server.on('close',()=>clearInterval(timer));return server
 }
-if(require.main===module){const port=Number(process.env.PORT)||3000;createServer().listen(port,'0.0.0.0',()=>console.log(`Battleship: http://localhost:${port} (LAN: usa la IP de este equipo)`));}
-module.exports={createServer};
+if(require.main===module){const port=Number(process.env.PORT)||3000;createServer().listen(port,'0.0.0.0',()=>console.log('Atlas Naval en puerto '+port))}
+module.exports={createServer,SHIPS,WEAPONS};
