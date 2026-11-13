@@ -14,3 +14,34 @@
 .mp-chart-tools span { color: #a9c1cc; font-size: 13px; }
 .mp-chart-tools strong { min-width: 92px; text-align: center; }
 
+
+.mp-chart-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #071923;
+  border: 1px solid #315367;
+  border-radius: 9px;
+}
+.mp-chart-tools span { color: #a9c1cc; font-size: 13px; }
+.mp-chart-tools strong { min-width: 92px; text-align: center; }
+.menu-card > #btnMultiplayer {
+  display: flex !important;
+  visibility: visible !important;
+  grid-column: 1 / -1;
+  min-height: 76px;
+  align-items: center;
+  justify-content: center;
+  border-color: #4f8794;
+  background: linear-gradient(135deg, #123d50, #0b2b3a);
+  color: #eefaff;
+  font-weight: 750;
+}
+.menu-card > #btnMultiplayer:hover {
+  border-color: #f0ce73;
+  background: linear-gradient(135deg, #1b5368, #10394a);
+}
+
