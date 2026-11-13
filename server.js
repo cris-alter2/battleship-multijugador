@@ -1,11 +1,11 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const SHIPS=[
- {type:'carrier',name:'Portaviones',maxHp:100,length:190,width:52,move:110,weapons:['cannon','rocket']},
- {type:'battleship',name:'Acorazado',maxHp:90,length:165,width:48,move:125,weapons:['cannon','torpedo']},
- {type:'submarine',name:'Submarino',maxHp:65,length:125,width:34,move:145,weapons:['torpedo']},
- {type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','rocket']},
- {type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','torpedo']}
+ {t:0,type:'carrier',name:'Portaviones',maxHp:100,length:190,width:52,move:110,weapons:['cannon','rocket']},
+ {t:1,type:'battleship',name:'Acorazado',maxHp:90,length:165,width:48,move:125,weapons:['cannon','torpedo']},
+ {t:2,type:'submarine',name:'Submarino',maxHp:65,length:125,width:34,move:145,weapons:['torpedo']},
+ {t:3,type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','rocket']},
+ {t:3,type:'destroyer',name:'Destructor',maxHp:55,length:105,width:30,move:170,weapons:['cannon','torpedo']}
 ];
 const WEAPONS={cannon:{name:'Cañón naval',damage:22,radius:34},torpedo:{name:'Torpedo',damage:30,radius:24},rocket:{name:'Cohetes',damage:18,radius:62},air:{name:'Ataque aéreo',damage:16,radius:78,tower:true}};
 const CARDS={sonar:{name:'Pulso de sonar',cost:1},volley:{name:'Ataque coordinado',cost:1},evade:{name:'Maniobra evasiva',cost:1},repair:{name:'Reparación de emergencia',cost:1},decoy:{name:'Señuelo naval',cost:1}};
