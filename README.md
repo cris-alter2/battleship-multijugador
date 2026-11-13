@@ -7,9 +7,18 @@ Versión multijugador del juego Battleship Atlas Naval. Conserva el menú y los 
 - Carta naval continua con aguas enemigas y propias apiladas.
 - Sprites originales del administrador gráfico integrado, incluidas las variantes de aspecto elegidas en el juego.
 - Agua animada, sectores, radar, rosa de los vientos, escala, marcos tácticos y línea de contacto.
+<<<<<<< HEAD
+- Carta náutica ampliada con curvas batimétricas, rumbos, controles de zoom hasta ×3 y desplazamiento de la vista.
 - Cinco naves con posición, orientación, resistencia y hundimiento.
 - Tres puntos de acción por turno.
 - Movimiento y cuatro ataques: cañón, torpedo, cohetes y ataque aéreo.
+- Previsualización de maniobras, detección visual de colisiones y demarcaciones de alcance por arma.
+- Animaciones diferenciadas de artillería, torpedos, cohetes, ataque aéreo, impactos y estelas de movimiento.
+=======
+- Cinco naves con posición, orientación, resistencia y hundimiento.
+- Tres puntos de acción por turno.
+- Movimiento y cuatro ataques: cañón, torpedo, cohetes y ataque aéreo.
+>>>>>>> 042920244f82db1347d679749182287b24bdee17
 - Cartas tácticas: sonar, ataque coordinado, maniobra evasiva, reparación y señuelo.
 - Emparejamiento en línea, cola LAN y salas privadas.
 - Reconexión breve, abandono explícito y cierre no destructivo de la ventana.
