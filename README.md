@@ -16,7 +16,8 @@ Versión multijugador del juego Battleship Atlas Naval. Conserva el menú y los 
 - Animaciones diferenciadas de artillería, torpedos, cohetes, ataque aéreo, impactos y estelas de movimiento.
 - Cartas tácticas: sonar, ataque coordinado, maniobra evasiva, reparación y señuelo.
 - Economía táctica del modo clásico: se obtiene 1 punto por cada 5 PV de daño efectivo y cada carta exige su coste correspondiente.
-- El señuelo naval se coloca en aguas propias como un contacto falso, permanece oculto hasta recibir fuego y resiste dos ataques.
+- El señuelo naval se coloca en aguas propias, resiste dos ataques y nunca entrega sprite ni coordenadas al rival; solo el informe del segundo impacto revela que era falso.
+- Los fallos al agua no dejan marcas persistentes. Las marcas de impacto sobre naves o contactos duran tres rondas.
 - Mano inicial de cuatro cartas, mazo y descarte independientes por jugador; se roban dos cartas cada tres rondas y es obligatorio descartar el excedente antes de continuar.
 - Emparejamiento en línea, cola LAN y salas privadas.
 - Reconexión breve, abandono explícito y cierre no destructivo de la ventana.
