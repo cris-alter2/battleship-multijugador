@@ -19,6 +19,7 @@ Versión multijugador del juego Battleship Atlas Naval. Conserva el menú y los 
 - El señuelo naval se coloca en aguas propias, resiste dos ataques y nunca entrega sprite ni coordenadas al rival; solo el informe del segundo impacto revela que era falso.
 - Los fallos al agua no dejan marcas persistentes. Las marcas de impacto sobre naves o contactos duran tres rondas.
 - Mano inicial de cuatro cartas, mazo y descarte independientes por jugador; se roban dos cartas cada tres rondas y es obligatorio descartar el excedente antes de continuar.
+- Pulso sonar de área: informa únicamente si existe presencia enemiga dentro de 220 unidades; no entrega cantidad, coordenadas reales ni posiciones aproximadas, y el rival no conoce el resultado.
 - Emparejamiento en línea, cola LAN y salas privadas.
 - Reconexión breve, abandono explícito y cierre no destructivo de la ventana.
 - Validación de acciones y ocultación de la flota rival en el servidor.
